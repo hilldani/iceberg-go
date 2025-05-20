@@ -19,15 +19,18 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/glue"
 	"github.com/aws/aws-sdk-go-v2/service/glue/types"
+	"github.com/google/uuid"
 	"github.com/polarsignals/iceberg-go"
 	"github.com/polarsignals/iceberg-go/table"
 	"github.com/thanos-io/objstore"
@@ -95,22 +98,23 @@ func NewGlue(region, catalogID string, bucket objstore.Bucket, props iceberg.Pro
 			return nil, fmt.Errorf("secret access key is required when access key ID is provided")
 		}
 
-		credOpts := []func(*credentials.Options){}
+		// Get session token if provided
+		sessionToken := ""
 		if token, ok := props[SessionToken]; ok {
-			credOpts = append(credOpts, func(o *credentials.Options) {
-				o.SessionToken = token
-			})
+			sessionToken = token
 		}
 
 		opts = append(opts, config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(accessKey, secretKey, props[SessionToken]),
+			credentials.NewStaticCredentialsProvider(accessKey, secretKey, sessionToken),
 		))
 	}
 
 	// Add endpoint if provided
 	if endpoint, ok := props[Endpoint]; ok {
-		opts = append(opts, config.WithEndpointResolverWithOptions(
-			aws.EndpointResolverWithOptionsFunc(func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
+		// Note: Using deprecated WithEndpointResolver for compatibility
+		// TODO: Update to newer AWS SDK endpoint resolver approach in the future
+		opts = append(opts, config.WithEndpointResolver(
+			aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
 				return aws.Endpoint{URL: endpoint}, nil
 			}),
 		))
@@ -170,8 +174,7 @@ func (g *glueCatalog) ListTables(ctx context.Context, namespace table.Identifier
 	for paginator.HasMorePages() {
 		output, err := paginator.NextPage(ctx)
 		if err != nil {
-			var notFoundErr *types.EntityNotFoundException
-			if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") || err != nil {
+			if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") {
 				return nil, fmt.Errorf("%w: %s", ErrNoSuchNamespace, err.Error())
 			}
 
@@ -207,8 +210,7 @@ func (g *glueCatalog) LoadTable(ctx context.Context, identifier table.Identifier
 
 	output, err := g.client.GetTable(ctx, input)
 	if err != nil {
-		var notFoundErr *types.EntityNotFoundException
-		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") || err != nil {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") {
 			return nil, fmt.Errorf("%w: %s", ErrNoSuchTable, err.Error())
 		}
 		return nil, fmt.Errorf("failed to get table: %w", err)
@@ -225,20 +227,20 @@ func (g *glueCatalog) LoadTable(ctx context.Context, identifier table.Identifier
 	}
 
 	// Read metadata from the location
-	r, err := g.bucket.Get(ctx, *metadataLocation)
+	r, err := g.bucket.Get(ctx, metadataLocation)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read metadata from %q: %w", *metadataLocation, err)
+		return nil, fmt.Errorf("failed to read metadata from %q: %w", metadataLocation, err)
 	}
 	defer r.Close()
 
 	// Parse metadata
-	metadata, err := table.ParseTableMetadata(r)
+	metadata, err := table.ParseMetadata(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse metadata: %w", err)
 	}
 
 	// Create table
-	return table.New(identifier, metadata, *metadataLocation, g.bucket), nil
+	return table.New(identifier, metadata, metadataLocation, g.bucket), nil
 }
 
 func (g *glueCatalog) DropTable(ctx context.Context, identifier table.Identifier) error {
@@ -372,8 +374,7 @@ func (g *glueCatalog) DropNamespace(ctx context.Context, namespace table.Identif
 
 	_, err := g.client.DeleteDatabase(ctx, input)
 	if err != nil {
-		var notFoundErr *types.EntityNotFoundException
-		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") || err != nil {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") {
 			return fmt.Errorf("%w: %s", ErrNoSuchNamespace, err.Error())
 		}
 		return fmt.Errorf("failed to delete database: %w", err)
@@ -398,8 +399,7 @@ func (g *glueCatalog) LoadNamespaceProperties(ctx context.Context, namespace tab
 
 	output, err := g.client.GetDatabase(ctx, input)
 	if err != nil {
-		var notFoundErr *types.EntityNotFoundException
-		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") || err != nil {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") {
 			return nil, fmt.Errorf("%w: %s", ErrNoSuchNamespace, err.Error())
 		}
 		return nil, fmt.Errorf("failed to get database: %w", err)
@@ -516,20 +516,23 @@ func (g *glueCatalog) CreateTable(ctx context.Context, location string, schema *
 	}
 
 	// Create metadata file
-	metadata := table.NewTableMetadata(
-		table.FormatV2,
+	metadata := table.NewMetadataV1Builder(
 		location,
 		schema,
-		opts.partitionSpec,
-		nil, // sort orders
-		props,
-	)
+		time.Now().UnixMilli(),
+		schema.NumFields(),
+	).
+		WithTableUUID(uuid.New()).
+		WithCurrentSchemaID(schema.ID).
+		WithPartitionSpecs([]iceberg.PartitionSpec{opts.partitionSpec}).
+		WithDefaultSpecID(opts.partitionSpec.ID()).
+		Build()
 
 	// Generate a unique ID for the metadata file
 	metadataFile := fmt.Sprintf("%s/metadata/v0.metadata.json", location)
 
 	// Write metadata to the bucket
-	metadataBytes, err := metadata.MarshalJSON()
+	metadataBytes, err := json.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}

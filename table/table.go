@@ -27,7 +27,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
-	"github.com/parquet-go/parquet-go"
 	"github.com/polarsignals/iceberg-go"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/exp/slices"
@@ -201,36 +200,4 @@ func generateULID() ulid.ULID {
 	t := time.Now()
 	entropy := ulid.Monotonic(rand.New(rand.NewSource(t.UnixNano())), 0)
 	return ulid.MustNew(ulid.Timestamp(t), entropy)
-}
-
-func parquetSchemaToIcebergSchema(id int, schema *parquet.Schema) *iceberg.Schema {
-	fields := make([]iceberg.NestedField, 0, len(schema.Fields()))
-	for i, f := range schema.Fields() {
-		fields = append(fields, iceberg.NestedField{
-			Type:     parquetTypeToIcebergType(f.Type()),
-			ID:       i,
-			Name:     f.Name(),
-			Required: f.Required(),
-		})
-	}
-	return iceberg.NewSchema(id, fields...)
-}
-
-func parquetTypeToIcebergType(t parquet.Type) iceberg.Type {
-	switch tp := t.Kind(); tp {
-	case parquet.Boolean:
-		return iceberg.BooleanType{}
-	case parquet.Int32:
-		return iceberg.Int32Type{}
-	case parquet.Int64:
-		return iceberg.Int64Type{}
-	case parquet.Float:
-		return iceberg.Float32Type{}
-	case parquet.Double:
-		return iceberg.Float64Type{}
-	case parquet.ByteArray:
-		return iceberg.BinaryType{}
-	default:
-		panic(fmt.Sprintf("unsupported parquet type: %v", tp))
-	}
 }

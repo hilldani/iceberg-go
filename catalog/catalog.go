@@ -94,13 +94,6 @@ func WithPartitionSpec(spec iceberg.PartitionSpec) TableOption {
 	}
 }
 
-const (
-	keyOauthToken        = "token"
-	keyWarehouseLocation = "warehouse"
-	keyMetadataLocation  = "metadata_location"
-	keyOauthCredential   = "credential"
-)
-
 func TableNameFromIdent(ident table.Identifier) string {
 	if len(ident) == 0 {
 		return ""

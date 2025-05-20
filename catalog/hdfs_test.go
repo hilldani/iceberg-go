@@ -290,7 +290,7 @@ func Test_HDFS(t *testing.T) {
 				// Check to make sure the data is gone
 				require.NotEqual(t, deleted.FilePath(), entry.DataFile().FilePath())
 				// Check to make sure the new data is there
-				if "Bartholomew" == string(entry.DataFile().LowerBoundValues()[0]) {
+				if string(entry.DataFile().LowerBoundValues()[0]) == "Bartholomew" {
 					found = true
 				}
 			}
@@ -344,7 +344,7 @@ func Test_HDFS(t *testing.T) {
 				// Check to make sure the data is gone
 				require.NotEqual(t, deleted.FilePath(), entry.DataFile().FilePath())
 				// Check to make sure the new data is there
-				if "Scooby" == string(entry.DataFile().LowerBoundValues()[0]) {
+				if string(entry.DataFile().LowerBoundValues()[0]) == "Scooby" {
 					found = true
 				}
 			}
