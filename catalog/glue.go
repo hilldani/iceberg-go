@@ -66,7 +66,7 @@ type glueCatalog struct {
 	props     iceberg.Properties
 }
 
-// NewGlue creates a new AWS Glue catalog implementation.
+// NewGlue creates a new AWS Glue catalog implementation
 // region: AWS region where the Glue catalog is located
 // catalogID: Optional AWS Glue catalog ID. If empty, defaults to the AWS account ID
 // bucket: Object storage bucket for storing Iceberg metadata
