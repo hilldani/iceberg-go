@@ -79,6 +79,9 @@ func NewGlue(region, catalogID string, bucket objstore.Bucket, props iceberg.Pro
 		props = make(iceberg.Properties)
 	}
 
+	// Store custom endpoint if specified
+	var customEndpoint *string
+
 	// Add region to properties
 	props[Region] = region
 
@@ -111,13 +114,8 @@ func NewGlue(region, catalogID string, bucket objstore.Bucket, props iceberg.Pro
 
 	// Add endpoint if provided
 	if endpoint, ok := props[Endpoint]; ok {
-		// Note: Using deprecated WithEndpointResolver for compatibility
-		// TODO: Update to newer AWS SDK endpoint resolver approach in the future
-		opts = append(opts, config.WithEndpointResolver(
-			aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
-				return aws.Endpoint{URL: endpoint}, nil
-			}),
-		))
+		// Store the endpoint for service-specific configuration
+		customEndpoint = &endpoint
 	}
 
 	// Add max retries if provided
@@ -140,8 +138,18 @@ func NewGlue(region, catalogID string, bucket objstore.Bucket, props iceberg.Pro
 		return nil, fmt.Errorf("failed to create AWS config: %w", err)
 	}
 
+	// Create Glue client with options
+	clientOpts := []func(*glue.Options){}
+	
+	// Apply custom endpoint if provided
+	if customEndpoint != nil {
+		clientOpts = append(clientOpts, func(o *glue.Options) {
+			o.BaseEndpoint = customEndpoint
+		})
+	}
+	
 	// Create Glue client
-	client := glue.NewFromConfig(cfg)
+	client := glue.NewFromConfig(cfg, clientOpts...)
 
 	return &glueCatalog{
 		client:    client,
