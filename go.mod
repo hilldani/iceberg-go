@@ -30,7 +30,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hamba/avro/v2 v2.16.0
 	github.com/oklog/ulid v1.3.1
-	github.com/parquet-go/parquet-go v0.20.1
+	github.com/parquet-go/parquet-go v0.24.0
 	github.com/stretchr/testify v1.8.4
 	github.com/thanos-io/objstore v0.0.0-20240309075357-e8336a5fd5f3
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
@@ -73,7 +73,6 @@ require (
 	github.com/prometheus/common v0.44.0 // indirect
 	github.com/prometheus/procfs v0.11.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/segmentio/encoding v0.3.6 // indirect
 	golang.org/x/sys v0.21.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
